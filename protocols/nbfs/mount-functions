@@ -1,0 +1,43 @@
+#!/bin/busybox sh
+
+function mount_root() {
+    local nbfsroot options remote_share rootfs
+
+    rootfs="$1"
+    nbfsroot="$(get_cmdline_arg nbfsroot)"
+    if [ -z "${nbfsroot}" ]
+    then
+        emergency_shell "/proc/cmdline is missing option 'nbfsroot'"
+    fi
+
+    # nbfsroot=<server-ip>:<root-dir>[,<options>]
+    if [ "${nbfsroot#*,}" != "${nbfsroot}" ]; then
+        options="-o ${nbfsroot#*,}"
+    fi
+    remote_share=${nbfsroot%%,*}
+    if has_cmdline_flag "ro"
+    then
+        options="${options} -o ro"
+    fi
+
+    # populate /run with files prepared when this initramfs was built
+    mv /run-files/* /run
+
+    # mount.nbfs will be running as a background process all over
+    # the OS lifetime. We have to avoid issues with the vanishing of the
+    # binary executable and dependent libraries when the kernel will
+    # free the initramfs filesystem.
+    # So we prepared a small rootfs directory on /run where we can lauch
+    # it, independently from the initramfs root. The content of /run
+    # is not released by the kernel when releasing the initramfs.
+    cd /run/nbfs/rootfs
+    mkdir -p rootfs proc dev
+    mount -o move /proc proc  # mount.nbfs will monitor /proc/pressure
+    mount -o move /dev dev    # mount.nbfs needs /dev/fuse and /dev/console
+    chroot . bin/mount.nbfs ${options} ${remote_share} rootfs
+    mount -o move rootfs "${rootfs}"
+    mount -o move dev /dev
+    mount -o move proc /proc
+    rmdir rootfs proc dev
+    cd /
+}

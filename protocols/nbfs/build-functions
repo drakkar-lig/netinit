@@ -1,0 +1,16 @@
+#!/bin/bash
+
+proto_check_host() {
+    check_host_has_exec mount.nbfs
+}
+
+proto_customize_rootfs() {
+    mkdir -p run-files/nbfs/rootfs
+    cd run-files/nbfs/rootfs
+    copy_exec_to_rootfs mount.nbfs
+    cd - >/dev/null
+}
+
+proto_modules() {
+    echo fuse
+}
