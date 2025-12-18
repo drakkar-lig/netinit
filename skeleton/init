@@ -1,0 +1,36 @@
+#!/bin/busybox sh
+. /env-file
+. /functions
+. /mount-functions
+
+set -e
+trap exit_handler EXIT
+
+# install busybox command symlinks
+/bin/busybox --install bin/
+
+# load modules
+for mod in $MODULES
+do
+    insmod "/modules/${mod}.ko"
+done
+
+# mount /proc, /sys, /dev, /run
+mkdir /proc
+mount -t proc proc /proc
+mkdir /sys
+mount -t sysfs sysfs /sys
+mkdir -p /dev
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /run
+mount -t tmpfs none /run
+
+# configure the network
+netconf
+
+# mount the network root filesystem
+mkdir -p /mnt/rootfs
+mount_root /mnt/rootfs
+
+# run the init system of the network root filesystem
+run_root_init /mnt/rootfs

@@ -1,0 +1,24 @@
+#!/bin/busybox sh
+
+function mount_root() {
+    local nfsroot options remote_share rootfs
+
+    rootfs="$1"
+    nfsroot="$(get_cmdline_arg nfsroot)"
+    if [ -z "${nfsroot}" ]
+    then
+        emergency_shell "/proc/cmdline is missing option 'nfsroot'"
+    fi
+
+    # nfsroot=<server-ip>:<root-dir>[,<options>]
+    if [ "${nfsroot#*,}" != "${nfsroot}" ]; then
+        options="-o ${nfsroot#*,}"
+    fi
+    remote_share=${nfsroot%%,*}
+    if has_cmdline_flag "ro"
+    then
+        options="${options} -o ro"
+    fi
+
+    mount -t nfs ${options} ${remote_share} "${rootfs}"
+}

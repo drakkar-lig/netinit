@@ -1,0 +1,13 @@
+#!/bin/bash
+
+proto_check_host() {
+    check_host_has_exec mount.nfs4
+}
+
+proto_customize_rootfs() {
+    copy_exec_to_rootfs mount.nfs4
+}
+
+proto_modules() {
+    echo nfsv4
+}

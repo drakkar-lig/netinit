@@ -1,0 +1,146 @@
+#!/bin/busybox sh
+
+function get_cmdline_arg() {
+    # note: we use '\(^\| \)' to match a space or
+    # the start of the line.
+    # If we used '\<' instead, then it would
+    # match walt.server.ip=<ip> too when we are just
+    # looking for the parameter ip=<ip-conf>.
+    local match="$(
+        grep -o "\(^\| \)${1}=[^[:space:]]*" \
+                    < /proc/cmdline
+    )" && \
+    echo "$match" | sed -e "s/\(^\| \)${1}=//"
+}
+
+function has_cmdline_flag() {
+    grep "\(^\| \)${1}\($\| \)" >/dev/null \
+                    < /proc/cmdline
+}
+
+function get_boot_intf_mac() {
+    # we have BOOTIF=01-<mac-address>
+    # and <mac-address> is written with
+    # '-' as a byte separator
+    local bootif="$(get_cmdline_arg BOOTIF)" && \
+    echo "${bootif}" | sed -e "s/^...//" \
+                           -e "s/-/:/g"
+}
+
+function get_boot_intf() {
+    local mac=$(get_boot_intf_mac) && \
+    local sys_cl_path="$(
+      grep -l "$mac" /sys/class/net/*/address
+    )" && \
+    basename $(dirname "$sys_cl_path")
+}
+
+function configure_intf() {
+    local intf="$1"
+    local ip_conf="$2"
+
+    if [ "$ip_conf" = "dhcp" ]; then
+        ip link set "$intf" up
+        timeout 10 \
+          udhcpc -i "$intf" -n -q -f -s /bin/udhcpc-process-lease.sh
+        return $?
+    fi
+
+    # Split IP configuration
+    # format: client-ip:server-ip:gw-ip:netmask:hostname:device:autoconf:dns0:dns1
+    IFS=':' read -r client_ip server_ip gw_ip netmask hostname _ <<EOF
+$ip_conf
+EOF
+
+    if [ -n "$client_ip" ] && [ -n "$netmask" ]; then
+        ip addr add "$client_ip"/"$netmask" dev "$intf"
+        ip link set "$intf" up
+    else
+        echo "Missing IP address or netmask."
+        return 1
+    fi
+
+    if [ -n "$hostname" ]; then
+        echo "$hostname" > /proc/sys/kernel/hostname
+    fi
+
+    if [ -n "$gw_ip" ]; then
+        # test by ping-ing the gateway
+        if ! ping -c 1 -I "$intf" -W 3 "$gw_ip" >/dev/null
+        then
+            echo "Failed (cannot reach the gateway)." >&2
+            # deconfigure
+            ip addr del "$client_ip"/"$netmask" dev "$intf"
+            ip link set down dev "$intf"
+            return 1
+        fi
+        ip route add default via "$gw_ip" dev "$intf"
+    fi
+}
+
+function fail_netconf() {
+    echo "Failed network configuration!" \
+         "Will reboot..." >&2
+    sleep 2
+    #reboot -f now
+    return 1
+}
+
+function netconf() {
+    local intf ip_conf
+    if ! ip_conf="$(get_cmdline_arg ip)"
+    then
+        ip_conf="dhcp"
+    fi
+    if intf="$(get_boot_intf)"
+    then
+        echo "Configuring $intf..."
+        configure_intf "$intf" "$ip_conf" || fail_netconf
+    else
+        local succeeded=0
+        for intf in $(ls /sys/class/net)
+        do
+            if [ ! -d "/sys/class/net/$intf/device" ]
+            then
+                continue  # ignore, not a physical interface
+            fi
+            echo "Configuring $intf..."
+            configure_intf "$intf" "$ip_conf" || continue
+            succeeded=1
+            break
+        done
+        [ "$succeeded" = "1" ] || fail_netconf
+    fi
+}
+
+function exit_handler() {
+    echo "Dropping to a shell." >&2
+    busybox sh
+    echo "Will reboot."
+    busybox sleep 1
+    busybox reboot -f now
+}
+
+function emergency_shell() {
+    err_msg="$1"
+    echo "Failed: ${err_msg}." >&2
+    exit 1  # will trigger EXIT handler
+}
+
+function run_root_init() {
+    local init
+    local rootfs="$1"
+
+    # check which init we should start
+    init="$(get_cmdline_arg init)" || init="/sbin/init"
+
+    # umount or move filesystems
+    umount /sys
+    mount -o move /proc "${rootfs}/proc"
+    mount -o move /dev "${rootfs}/dev"
+    mount -o move /run "${rootfs}/run"
+
+    # run final init
+    exec run-init "${rootfs}" "${init}" "$@" \
+            <"${rootfs}/dev/console" >"${rootfs}/dev/console" 2>&1
+}
