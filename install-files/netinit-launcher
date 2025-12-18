@@ -1,0 +1,4 @@
+#!/bin/sh
+# Just call the real script, giving the full path, so that it
+# can detect that NETINIT_DIR=/usr/share/netinit where reading $0.
+exec /usr/share/netinit/netinit "$@"

@@ -45,29 +45,30 @@ check_commands id dirname mktemp head sed grep uname realpath \
                sort tr
 check_root
 
-THIS_DIR="$(cd "$(dirname $0)"; pwd)"
+NETINIT_DIR="$(cd "$(dirname $0)"; pwd)"
+PROGNAME="netinit"
 TMP_DIR="$(mktemp -d)"
 USAGE="""\
 USAGE
 -----
 Generate an initramfs file for the current machine:
-<target>$ $0 [..options..] <out-initramfs-file>                  # (A)
+$ $PROGNAME [options...] <out-initramfs-file>                        # (A)
 
 Probe modules needed on the target machine, then
 build the initramfs from a different build environment:
-<target>$ $0 --probe [..options..] > <env-file>                  # (B1)
-<build>$ $0 --env <env-file> [..options..] <out-initramfs-file>  # (B2)
+target$ $PROGNAME --probe [options...] > <env-file>                  # (B1)
+build$ $PROGNAME --env <env-file> [options...] <out-initramfs-file>  # (B2)
 
 Build the initramfs from a different build environment, but
 consider the target kernel has all needed modules built in:
-<build>$ $0 --no-modules [..options..] <out-initramfs-file>      # (C)
+build$ $PROGNAME --no-modules [options...] <out-initramfs-file>      # (C)
 
 Print the full help message:
-$0 --help
+$PROGNAME --help
 """
 
-DEFAULT_PROTOCOL=$(ls -1 "$THIS_DIR/protocols/" | head -n 1)
-LABEL_PROTOCOLS=$(echo $(ls "$THIS_DIR/protocols/") | sed "s/ /|/g")
+DEFAULT_PROTOCOL=$(ls -1 "$NETINIT_DIR/protocols/" | head -n 1)
+LABEL_PROTOCOLS=$(echo $(ls "$NETINIT_DIR/protocols/") | sed "s/ /|/g")
 
 HELP="""\
 $USAGE\
@@ -143,7 +144,7 @@ the target machine, you should first generate an env-file on this
 target machine using the probe-mode."""
 
 MESSAGE_SEE_HELP="""\
-See '$0 --help'. Aborting."""
+See '$PROGNAME --help'. Aborting."""
 
 #trap "rm -rf ${TMP_DIR}" EXIT
 set -e
@@ -216,7 +217,7 @@ parse_env_file() {
          "$protocol" = "__FAILED__" ]
     then
         echo "Invalid env file. Use" \
-             "'$0 --probe [..options..] > <env-file>'" \
+             "'$PROGNAME --probe [options...] > <env-file>'" \
              "on the target machine to generate it." >&2
         exit 2
     fi
@@ -229,10 +230,10 @@ parse_env_file() {
 # check usage
 if [ "$protocol" != "" ]
 then
-    if [ ! -d "$THIS_DIR/protocols/$protocol" ]
+    if [ ! -d "$NETINIT_DIR/protocols/$protocol" ]
     then
         echo "Unknown protocol." \
-             "Use one of:" $(ls "$THIS_DIR/protocols/") >&2
+             "Use one of:" $(ls "$NETINIT_DIR/protocols/") >&2
         echo "Aborting." >&2
         exit 2
     fi
@@ -302,7 +303,7 @@ then
             echo "You can regenerate an env-file with the right protocol" \
                  "by running the following command on the target" \
                  "machine:" >&2
-            echo "$ $0 --probe --protocol $protocol > new-env-file" >&2
+            echo "$ $PROGNAME --probe --protocol $protocol > new-env-file" >&2
             echo "Aborting." >&2
             exit 2
         fi
@@ -569,10 +570,10 @@ build_cpio_archive() {
     local rd_rootfs="$TMP_DIR/rd_rootfs"
     local out_file="$1"
     # copy static initramfs skeleton files
-    cp -rp "$THIS_DIR/skeleton" "$rd_rootfs"
+    cp -rp "$NETINIT_DIR/skeleton" "$rd_rootfs"
     cd $rd_rootfs
     # add protocol-specific mount code
-    cp "$THIS_DIR/protocols/${protocol}/mount-functions" .
+    cp "$NETINIT_DIR/protocols/${protocol}/mount-functions" .
     # detect modules (unless specified in an env file),
     # add corresponding module files
     # generate the env-file  /env
@@ -602,7 +603,7 @@ build_cpio_archive() {
     # create the cpio archive
     cd "$rd_rootfs"
     find . | cpio -o -H newc >"$out_file" 2>/dev/null
-    cd "$THIS_DIR"
+    cd "$NETINIT_DIR"
 }
 
 check_host_has_exec() {
@@ -620,7 +621,7 @@ check_host_has_exec() {
     fi
 }
 
-. "$THIS_DIR/protocols/${protocol}/build-functions"
+. "$NETINIT_DIR/protocols/${protocol}/build-functions"
 
 if [ "$mode" = "build" ]
 then
